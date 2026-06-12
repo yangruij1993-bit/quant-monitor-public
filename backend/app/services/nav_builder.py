@@ -297,7 +297,7 @@ class NavBuilder:
     def _nav_spmo_usmv_64(self) -> NavCurve | None:
         """Reconstruct NAV for SPMO/USMV 6:4 using SPX momentum timing."""
         p = self._SPMO_USMV_PARAMS
-        from app.services.signal_parser import signal_parser
+        from app.services.legacy_signal_parser import signal_parser
         df = signal_parser._fetch_index_close(p["bench"], start_date="20230101")
         if df is None or len(df) < 100:
             return None
