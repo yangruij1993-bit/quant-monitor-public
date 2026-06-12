@@ -1,43 +1,38 @@
-# Asset Correlation Monitor
+# 资产配置监控
 
-A web-based macroeconomic asset allocation and correlation monitor. Tracks **60+ assets** across US equities, US fixed income, A-share ETFs, and commodities, calculating dynamic correlations (GARCH + Kalman Filter) and detecting anomaly signals (Z-scores) to guide portfolio allocation.
+宏观经济资产配置与动态相关性监控平台。跟踪 **60+ 资产**（美股 ETF、美债、A股 ETF、大宗商品），使用 GARCH + Kalman Filter 计算动态相关性，检测异常信号（Z-Score），辅助组合配置决策。
 
-## Architecture
+## 技术架构
 
-*   **Backend**: Python, FastAPI, Pandas, Tushare, yfinance, PostgreSQL
-*   **Frontend**: Next.js 14, React, Tailwind CSS, Recharts, Plotly.js (static export)
-*   **Data**: A-share ETFs via Tushare, US ETFs via Oracle/yfinance, persisted in PostgreSQL with CSV fallback.
+*   **后端**: Python, FastAPI, Pandas, Tushare, yfinance, PostgreSQL
+*   **前端**: Next.js 14, React, Tailwind CSS, Recharts, Plotly.js（静态导出）
+*   **数据**: A股 ETF 通过 Tushare，美股 ETF 通过 Oracle/yfinance，PostgreSQL 持久化，CSV 兜底
 
-## Features
+## 功能
 
-*   **Hierarchical Group Navigation**: Two-tier tabs — switch between 4 macro groups, then drill into Overview / Time Series / Insights.
-*   **Dynamic Correlation (Kalman Filter)**: Replaces standard rolling windows with a GARCH(1,1) + 1D Kalman Filter (random walk) algorithm to eliminate "ghost effects", offering 3 sensitivity tiers (Fast / Standard / Smooth).
-*   **Efficient Frontier Optimizer**: A standalone sandbox to run Markowitz mean-variance optimization across all 19 assets using the latest Smooth Kalman covariance matrix. Features Max Sharpe, Min Vol, and editable forward estimates with localStorage persistence.
-*   **Overview Dashboard**: Summary statistics (CAGR, Vol, Max DD) and Correlation Heatmaps (Fast vs Smooth sensitivities), sorted by historical volatility within each group.
-*   **Rolling Correlation Time Series**: Select a base asset to view its dynamic correlation with all other assets simultaneously.
-*   **Anomaly Signals**: Z-Score based alerting for ETF pairs diverging from historical norms.
-*   **Strategy Signal Plugin**: Drop a JSON file into `strategies/` to plug in any strategy's signals, holdings, and NAV curve. No backend code changes needed. See [STRATEGIES.md](STRATEGIES.md) for the spec.
-*   **Insights Panel**: Auto-generated regime notes and allocation suggestions based on current correlations.
-*   **Custom Hover Tooltips**: Hovering over tickers in Summary, Forward Table, Custom Portfolio, and Anomaly Signals shows full asset definitions (e.g. "BTC" → "Bitcoin (USD)").
+*   **分组导航**: 两级 Tab — 4 个宏观资产分组，每组包含概览 / 时序图 / 洞察
+*   **动态相关性（Kalman Filter）**: 用 GARCH(1,1) + 一维 Kalman Filter（随机游走）替代标准滚动窗口，消除"残影效应"，提供 3 档灵敏度（Fast / Standard / Smooth）
+*   **有效前沿优化器**: 基于最新 Kalman 协方差矩阵的 Markowitz 均值-方差优化，支持最大夏普、最小波动、可编辑的前瞻预期，localStorage 持久化
+*   **概览仪表盘**: 汇总统计（年化收益、波动率、最大回撤）和相关性热力图（Fast vs Smooth），按历史波动率排序
+*   **滚动相关性时序图**: 选择一个基准资产，同时查看它与所有其他资产的动态相关性曲线
+*   **异常信号**: 基于Z-Score的 ETF 配对偏离历史均值预警
+*   **策略信号插件**: 在 `strategies/` 目录放一个 JSON 文件即可接入任意策略的信号、持仓和净值曲线，无需改后端代码。详见 [STRATEGIES.md](STRATEGIES.md)
+*   **洞察面板**: 基于当前相关性自动生成市场状态分析和配置建议
+*   **自定义提示框**: 悬停 ticker 显示完整资产名称（如 "BTC" → "Bitcoin (USD)"）
 
-## Recent Fixes
+## 本地部署
 
-*   **Time Series date alignment**: Fixed a bug where `iloc` positional sampling caused BTC-USD (weekend data) and ETFs (trading days only) to produce disjoint date sets, resulting in invisible lines on the Rolling Time Series chart. Now samples from the union of all dates so all series share the same x-axis.
-*   **Ticker hover definitions**: Replaced native `title` attribute (unreliable on macOS) with custom styled React tooltips across all table components.
-
-## Local Setup
-
-### 1. Backend
+### 1. 后端
 
 ```bash
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp ../.env.example .env  # fill in your TUSHARE_TOKEN and DATABASE_URL
+cp ../.env.example .env  # 填入 TUSHARE_TOKEN 和 DATABASE_URL
 ```
 
-PostgreSQL setup:
+PostgreSQL 初始化：
 
 ```sql
 CREATE DATABASE asset_monitor;
@@ -45,47 +40,47 @@ CREATE USER assetmon WITH PASSWORD 'assetmon';
 GRANT ALL PRIVILEGES ON DATABASE asset_monitor TO assetmon;
 ```
 
-### 2. Frontend
+### 2. 前端
 
 ```bash
 cd frontend
 npm install
 ```
 
-## Running Locally
+## 启动
 
-You can start both the backend and frontend simultaneously using the provided script:
+同时启动前后端：
 
 ```bash
 chmod +x start.sh
 ./start.sh
 ```
 
-Or run them individually:
+或分别启动：
 
-**Backend:**
+**后端：**
 ```bash
 cd backend
 source .venv/bin/activate
 uvicorn app.main:app --port 8012
 ```
 
-**Frontend:**
+**前端：**
 ```bash
 cd frontend
 npm run dev -- -p 3012
 ```
 
-Open [http://localhost:3012](http://localhost:3012) in your browser.
+打开 [http://localhost:3012](http://localhost:3012)。
 
-## Sharing via ngrok
+## ngrok 分享
 
-One tunnel is enough — the backend also serves the built frontend:
+只需一个隧道 — 后端同时提供 API 和前端静态文件：
 
 ```bash
 ngrok http 8012
-# Get URL like https://xxxx.ngrok-free.app
+# 获取 URL 如 https://xxxx.ngrok-free.app
 cd frontend
 NEXT_PUBLIC_API_URL=https://xxxx.ngrok-free.app/api/v1/analysis npx next build
-# Restart backend — it serves frontend/out/ as static files
+# 重启后端即可 — 自动托管 frontend/out/ 静态文件
 ```
