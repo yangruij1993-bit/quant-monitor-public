@@ -75,10 +75,12 @@ strategies/
 
 ### 4. 配置目录路径
 
-环境变量 `STRATEGY_DIR` 指向策略目录（默认 `./strategies/`）：
+环境变量 `STRATEGY_DIR` 指向策略目录（`.env.example` 默认 `../strategies`，即项目根的 `strategies/`）：
 
 ```bash
-# .env
+# backend/.env
+STRATEGY_DIR=../strategies
+# 或绝对路径
 STRATEGY_DIR=/path/to/your/strategies
 ```
 

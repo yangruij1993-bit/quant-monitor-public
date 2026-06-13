@@ -22,7 +22,7 @@
 
 ## 上手指南
 
-本仓库不内置假策略或示例行情数据。第一次启动时，系统会根据你配置的数据源拉取行情；策略信号页默认为空，直到你把自己的策略输出写入 `STRATEGY_DIR`。
+本仓库内置一个带 Demo 标记的示例策略，用于演示策略信号页。第一次启动时，系统会根据你配置的数据源拉取行情；删除 `strategies/_demo/` 后，策略信号页会保持为空，直到你把自己的策略输出写入 `STRATEGY_DIR`。
 
 完整流程见 [GETTING_STARTED.md](GETTING_STARTED.md)。
 
@@ -61,6 +61,22 @@ npm install
 chmod +x start.sh
 ./start.sh
 ```
+
+### Windows 用户
+
+`start.sh` 依赖 bash + tmux，Windows 原生 cmd/PowerShell 跑不了。两种方案任选其一：
+
+**方案 A — 用 PowerShell 脚本（开箱即用）：**
+
+```powershell
+.\start.ps1            # 启动（会开两个控制台窗口分别显示前后端日志）
+.\start.ps1 stop       # 停止
+.\start.ps1 status     # 查看状态
+```
+
+**方案 B — 装 WSL2 或 Git Bash 后用 `start.sh`：**
+
+WSL2 是更接近生产环境的选择，长期维护建议走这条。Git Bash 装完直接能跑 `./start.sh`，但 tmux 在 Git Bash 下需要单独装。
 
 或分别启动：
 

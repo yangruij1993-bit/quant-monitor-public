@@ -31,6 +31,7 @@ function hashCode(s: string): number {
 function StrategyCard({ data, onSelect }: { data: SignalOverview; onSelect: () => void }) {
   const meta = getMeta(data.strategy_id);
   const detail = data.signal_detail;
+  const isDemo = data.strategy_id === "_demo" || detail?.is_demo === true;
 
   return (
     <div
@@ -41,6 +42,11 @@ function StrategyCard({ data, onSelect }: { data: SignalOverview; onSelect: () =
         <div className="flex items-center gap-2">
           <span className={meta.color}>{meta.icon}</span>
           <h4 className="font-semibold text-white">{data.strategy_name}</h4>
+          {isDemo && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border border-yellow-500/40 bg-yellow-500/10 text-yellow-300 tracking-wider">
+              Demo
+            </span>
+          )}
         </div>
         <span className="text-xs text-gray-500 font-mono">{data.signal_date}</span>
       </div>
@@ -445,6 +451,7 @@ function StrategyDetailView({ strategyId, overview }: { strategyId: string; over
   const meta = getMeta(strategyId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const detail = overview.signal_detail as Record<string, any>;
+  const isDemo = overview.strategy_id === "_demo" || detail?.is_demo === true;
 
   return (
     <div className="space-y-6">
@@ -452,10 +459,25 @@ function StrategyDetailView({ strategyId, overview }: { strategyId: string; over
       <div className="flex items-center gap-3">
         <span className={meta.color}>{meta.icon}</span>
         <div>
-          <h3 className="text-xl font-semibold text-white">{overview.strategy_name}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-xl font-semibold text-white">{overview.strategy_name}</h3>
+            {isDemo && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border border-yellow-500/40 bg-yellow-500/10 text-yellow-300 tracking-wider">
+                Demo
+              </span>
+            )}
+          </div>
           <p className="text-sm text-gray-500">信号日期: {overview.signal_date}</p>
         </div>
       </div>
+
+      {isDemo && (
+        <div className="rounded-md border border-yellow-500/30 bg-yellow-500/5 px-3 py-2 text-xs text-yellow-200/80">
+          这是示例数据，仅用于演示前端 UI，不构成任何投资建议。请删除
+          <code className="mx-1 px-1 rounded bg-gray-800 text-yellow-100">strategies/_demo/</code>
+          替换为你自己的策略。
+        </div>
+      )}
 
       {/* Generic signal_detail badges */}
       {Object.keys(detail).length > 0 && (
@@ -615,11 +637,27 @@ export default function StrategySignals() {
             <h3 className="text-xl font-semibold text-accent">Strategy Signals</h3>
             <span className="text-sm text-gray-500">{signals.length} strategies</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {signals.map((s) => (
-              <StrategyCard key={s.strategy_id} data={s} onSelect={() => setSubTab(s.strategy_id as StrategySubTab)} />
-            ))}
-          </div>
+          {signals.length === 0 ? (
+            <div className="card text-center py-12">
+              <Inbox size={32} className="mx-auto mb-3 text-gray-500" />
+              <p className="text-gray-300 mb-2 text-lg">还没有策略数据</p>
+              <p className="text-gray-500 text-sm mb-4 max-w-md mx-auto">
+                本系统不会自动生成假数据。把你的策略输出写到
+                <code className="text-accent mx-1 px-1.5 py-0.5 rounded bg-gray-800">strategies/&lt;strategy-id&gt;/signal_latest.json</code>
+                ，刷新本页即可看到。
+              </p>
+              <div className="text-gray-500 text-xs space-y-1">
+                <p>完整字段说明见 <code className="text-accent">STRATEGIES.md</code></p>
+                <p>或保留仓库自带的 <code className="text-accent">strategies/_demo/</code> 查看示例效果（含 demo 标记）</p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {signals.map((s) => (
+                <StrategyCard key={s.strategy_id} data={s} onSelect={() => setSubTab(s.strategy_id as StrategySubTab)} />
+              ))}
+            </div>
+          )}
         </>
       ) : selectedSignal ? (
         <StrategyDetailView strategyId={subTab} overview={selectedSignal} />

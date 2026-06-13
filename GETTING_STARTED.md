@@ -38,7 +38,7 @@ cp ../.env.example .env
 ```bash
 TUSHARE_TOKEN=你的_tushare_token
 DATABASE_URL=postgresql://assetmon:assetmon@localhost:5432/asset_monitor
-STRATEGY_DIR=./strategies
+STRATEGY_DIR=../strategies
 CORS_ORIGINS=*
 ```
 
@@ -66,14 +66,14 @@ chmod +x start.sh
 - 后端：`http://localhost:8012`
 - 健康检查：`http://localhost:8012/api/v1/health`
 
-如果策略信号页为空，这是正常的。系统不会生成假策略数据。
+策略信号页默认会显示一个 `_demo` 示例策略（带 Demo 徽章）让你看到 UI 长什么样。删除 `strategies/_demo/` 后页面就空了——这是正常的，系统不会生成假策略数据。
 
 ## 6. 接入自己的策略
 
 你的策略脚本只需要在运行结束后写出一个 JSON 文件：
 
 ```text
-backend/strategies/
+strategies/                  ← 项目根目录
   your-strategy-id/
     signal_latest.json
 ```
@@ -109,7 +109,7 @@ python your_strategy.py
 让你的脚本把最新结果写到：
 
 ```text
-backend/strategies/your-strategy-id/signal_latest.json
+strategies/your-strategy-id/signal_latest.json
 ```
 
 然后用 crontab、GitHub Actions、Airflow 或你自己的调度器定时运行策略脚本。前端刷新后会读取最新 JSON。
