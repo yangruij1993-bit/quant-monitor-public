@@ -1,0 +1,7 @@
+{"date": "2025-12-29", "action": "建仓", "detail": {"reason": "demo 建仓"}, "holdings": [{"ticker": "510300.SH", "name": "沪深300 ETF", "weight": 0.6}, {"ticker": "511010.SH", "name": "国债 ETF", "weight": 0.4}]}
+{"date": "2026-01-12", "action": "持有", "detail": {"reason": "demo hold"}}
+{"date": "2026-02-09", "action": "调仓", "detail": {"reason": "demo 调仓"}, "holdings": [{"ticker": "510300.SH", "name": "沪深300 ETF", "weight": 0.4}, {"ticker": "511010.SH", "name": "国债 ETF", "weight": 0.6}]}
+{"date": "2026-03-09", "action": "持有", "detail": {"reason": "demo hold"}}
+{"date": "2026-04-13", "action": "调仓", "detail": {"reason": "demo 调仓"}, "holdings": [{"ticker": "510300.SH", "name": "沪深300 ETF", "weight": 0.5}, {"ticker": "511010.SH", "name": "国债 ETF", "weight": 0.5}]}
+{"date": "2026-05-04", "action": "持有", "detail": {"reason": "demo hold"}}
+{"date": "2026-06-01", "action": "持有", "detail": {"reason": "demo hold"}}
