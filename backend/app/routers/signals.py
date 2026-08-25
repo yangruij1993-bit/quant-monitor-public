@@ -1,5 +1,4 @@
 import asyncio
-import hashlib
 import json
 import os
 from datetime import date, datetime
@@ -42,33 +41,6 @@ async def _save_signal_snapshot(overview: SignalOverview):
         pass
 
 
-async def _save_nav_cache(strategy_id: str, curve: NavCurve, metrics: BacktestMetrics | None):
-    try:
-        from app.db.repository import save_backtest
-        nav_data = {"dates": curve.dates, "nav": curve.nav}
-        if curve.benchmark_nav:
-            nav_data["benchmark_nav"] = curve.benchmark_nav
-        metrics_data = metrics.model_dump() if metrics else None
-        data_hash = hashlib.md5(json.dumps(nav_data).encode()).hexdigest()[:16]
-        await save_backtest(
-            strategy_id=strategy_id,
-            snapshot_date=str(date.today()),
-            nav_curve=nav_data,
-            metrics=metrics_data,
-            data_hash=data_hash,
-        )
-    except Exception:
-        pass
-
-
-async def _load_nav_cache(strategy_id: str) -> dict | None:
-    try:
-        from app.db.repository import load_backtest
-        return await load_backtest(strategy_id)
-    except Exception:
-        return None
-
-
 @router.get("/overview", response_model=List[SignalOverview])
 async def get_all_overviews():
     overviews = _get_overviews()
@@ -95,50 +67,17 @@ async def get_detail(strategy_id: str):
 
 @router.get("/nav/{strategy_id}", response_model=NavCurve)
 async def get_nav(strategy_id: str):
-    # 1. PG cache
-    cached = await _load_nav_cache(strategy_id)
-    if cached and cached.get("nav_curve"):
-        nc = cached["nav_curve"]
-        if isinstance(nc, str):
-            nc = json.loads(nc)
-        return NavCurve(
-            strategy_id=strategy_id,
-            dates=nc.get("dates", []),
-            nav=nc.get("nav", []),
-            benchmark_nav=nc.get("benchmark_nav"),
-        )
-
-    # 2. Generic parser
     result = generic_signal_parser.get_nav(strategy_id)
     if result is None:
         raise HTTPException(status_code=404, detail=f"NAV data not found for {strategy_id}")
-
-    metrics = None
-    try:
-        detail = generic_signal_parser.get_detail(strategy_id)
-        if detail and detail.metrics:
-            metrics = detail.metrics
-    except Exception:
-        pass
-    await _save_nav_cache(strategy_id, result, metrics)
     return result
 
 
 @router.get("/metrics/{strategy_id}", response_model=BacktestMetrics)
 async def get_metrics(strategy_id: str):
-    # PG cache
-    cached = await _load_nav_cache(strategy_id)
-    if cached and cached.get("metrics"):
-        m = cached["metrics"]
-        if isinstance(m, str):
-            m = json.loads(m)
-        return BacktestMetrics(**m)
-
-    # Generic parser
     detail = generic_signal_parser.get_detail(strategy_id)
     if detail and detail.metrics:
         return detail.metrics
-
     raise HTTPException(status_code=404, detail=f"Metrics not available for {strategy_id}")
 
 
@@ -170,3 +109,59 @@ async def get_history(strategy_id: str, limit: int = 30):
         pass
 
     return _get_history(strategy_id, limit)
+
+
+@router.get("/backtest/{strategy_id}")
+async def get_backtest_window(strategy_id: str, start_date: str, end_date: str | None = None):
+    """Recompute metrics for an arbitrary window of the strategy's nav series."""
+    from app.services import generic_signal_parser as gsp
+
+    data = generic_signal_parser.get_raw(strategy_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"Strategy not found: {strategy_id}")
+    nav_data = data.get("nav") or {}
+    dates = nav_data.get("dates") or []
+    values = nav_data.get("values") or []
+    if len(dates) != len(values) or len(dates) < 2:
+        raise HTTPException(status_code=404, detail=f"NAV data not found for {strategy_id}")
+
+    lo = next((i for i, d in enumerate(dates) if d >= start_date), None)
+    if lo is None:
+        raise HTTPException(status_code=400, detail=f"start_date {start_date} is after last nav date {dates[-1]}")
+    hi = len(dates) - 1
+    if end_date:
+        hi = next((len(dates) - 1 - k for k, d in enumerate(reversed(dates)) if d <= end_date), None)
+        if hi is None:
+            raise HTTPException(status_code=400, detail=f"end_date {end_date} is before first nav date {dates[0]}")
+    if hi - lo < 1:
+        raise HTTPException(status_code=400, detail="window contains fewer than 2 nav points")
+
+    sliced = {"dates": dates[lo:hi + 1], "values": values[lo:hi + 1]}
+    bench = nav_data.get("benchmark_nav")
+    if bench and len(bench) == len(dates):
+        sliced["benchmark_nav"] = bench[lo:hi + 1]
+        sliced["benchmark_name"] = nav_data.get("benchmark_name")
+
+    history_rows = [
+        row for row in generic_signal_parser.get_raw_history(strategy_id)
+        if str(row.get("date", "")) <= sliced["dates"][-1]
+    ]
+    metrics = gsp.compute_backtest_metrics(sliced, history_rows)
+    if metrics is None:
+        raise HTTPException(status_code=400, detail="window too narrow to compute metrics")
+
+    from app.models.signal_schema import NavCurve
+    window_curve = NavCurve(
+        strategy_id=strategy_id,
+        dates=sliced["dates"],
+        nav=sliced["values"],
+        benchmark_nav=sliced.get("benchmark_nav"),
+        benchmark_name=sliced.get("benchmark_name"),
+        excess_nav=None,
+    )
+    if window_curve.benchmark_nav:
+        window_curve.excess_nav = gsp._excess_from_nav(
+            [float(v) for v in window_curve.nav], [float(v) for v in window_curve.benchmark_nav]
+        )
+        window_curve.excess_name = "累计超额收益 (策略/基准 - 1)"
+    return {"metrics": metrics, "nav": window_curve}
