@@ -130,10 +130,10 @@ def test_period_returns_week_month_quarter_year():
 
 def test_weekly_return_prev_friday_to_end():
     """Weekly = 上周五收盘 → end. 连续交易周场景: end=周五时应等于过去 5 个交易日累计收益."""
-    # 模拟 1/2 (上周五) ~ 1/9 (本周五) 完整两周
+    # 模拟 7/3 (上周五) ~ 7/10 (本周五) 完整两周
     dates = pd.to_datetime([
-        "2026-01-02",
-        "2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09",
+        "2026-07-03",
+        "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10",
     ])
     s_values = [1.06, 1.048917, 1.038750, 1.018119, 1.058233, 1.023180]
     b_values = [1.0, 0.985, 0.97, 0.955, 0.985, 0.97]
@@ -142,8 +142,8 @@ def test_weekly_return_prev_friday_to_end():
 
     res = compute_pms_metrics(s_nav, b_nav)
 
-    # end=1/9 (Friday, weekday=4) → prev_friday = 1/9 - 7d = 1/2, 在数据里
-    # weekly_return = s_nav[1/9] / s_nav[1/2] - 1
+    # end=7/10 (Friday, weekday=4) → prev_friday = 7/10 - 7d = 7/3, 在数据里
+    # weekly_return = s_nav[7/10] / s_nav[7/3] - 1
     expected_w = 1.023180 / 1.06 - 1
     assert abs(res.weekly_return - expected_w) < 1e-6
     # 关键: 不是 ISO 周一→周五 的 -2.45%, 而是包含周一跳空后的 -3.9%
@@ -219,48 +219,13 @@ def test_zero_variance_returns_none_for_volatility_sharpe():
 
 def test_short_sample_returns_none_metrics():
     """Only 1 common day → almost everything None."""
-    dates = pd.date_range("2026-05-07", periods=1, freq="B")
+    dates = pd.date_range("2026-01-05", periods=1, freq="B")
     s_nav = pd.Series([1.0], index=dates)
     b_nav = pd.Series([1.0], index=dates)
     res = compute_pms_metrics(s_nav, b_nav)
     assert res.absolute_return is None
     assert res.annual_return is None
     assert res.sharpe_ratio is None
-
-
-# ── Item 7: Strategy/benchmark/excess date alignment ─────────────────
-
-
-# ── Item 7: Strategy/benchmark/excess date alignment ─────────────────
-# Tests removed: test_three_curves_aligned_in_snapshot,
-#               test_generic_parser_preserves_all_three_curves,
-#               test_generic_parser_preserves_pms_metrics
-# (These read local private strategy JSON paths not available in public repo.
-#  Task 6 will rebuild equivalent tests using _demo synthetic data.)
-
-
-# ── Item 9: Legacy strategy metrics backward-compat ─────────────────
-
-
-def test_legacy_metrics_still_constructible_with_old_fields_only():
-    """BacktestMetrics must accept the old required-only fields without PMS.
-
-    NOTE: This test is skipped until Task 5 adds alpha/beta fields to BacktestMetrics.
-    """
-    from app.models.signal_schema import BacktestMetrics
-    pytest.skip("Task 5 will add alpha/beta fields to BacktestMetrics")
-    m = BacktestMetrics(
-        annual_return=0.10,
-        max_drawdown=-0.05,
-        sharpe_ratio=1.2,
-        win_rate=0.55,
-        period_start="2026-01-01",
-        period_end="2026-06-30",
-    )
-    assert m.alpha is None
-    assert m.beta is None
-    assert m.calmar is None
-    assert m.annual_volatility is None
 
 
 # ── Item 1: Fixed-share buyhold ≠ daily-equal-weight ────────────────
@@ -278,7 +243,7 @@ def test_fixed_share_buyhold_differs_from_daily_equal_weight():
     fund_b = pd.Series([1.0, 1.0, 2.0], index=pd.date_range("2026-01-05", periods=3, freq="B"))
 
     # Fixed-share
-    build = fund_a.index[0]  # First date in the series
+    build = pd.Timestamp("2026-01-05")
     shares_a = 0.5 / fund_a.loc[build]
     shares_b = 0.5 / fund_b.loc[build]
     fixed_nav = (shares_a * fund_a + shares_b * fund_b)
@@ -319,7 +284,7 @@ def test_turnover_computation():
 
 def test_avg_holding_days_basic():
     """Single position held 10 calendar days → avg = 10."""
-    dates = pd.date_range("2026-01-05", periods=3, freq="B")  # 1/5 (Mon), 1/6 (Tue), 1/7 (Wed)
+    dates = pd.date_range("2026-01-05", periods=3, freq="B")  # 1/5, 1/6, 1/7
     wh = pd.DataFrame(
         {"A": [1.0, 1.0, 0.0]},
         index=dates,
@@ -355,7 +320,6 @@ def test_turnover_includes_cash_but_holding_days_exclude_cash():
 
 
 def test_no_benchmark_returns_absolute_metrics_only():
-    """Benchmark-optional mode: relative metrics all None when benchmark_nav=None."""
     idx = pd.date_range("2026-01-05", periods=40, freq="B")
     rng = np.random.default_rng(7)
     s = pd.Series((1.0 + rng.normal(0.0005, 0.01, 40)).cumprod(), index=idx)

@@ -257,11 +257,7 @@ def compute_pms_metrics(
         ex_std = float(np.std(excess_ret, ddof=1))
         if ex_std > 0:
             res.tracking_error = float(ex_std * math.sqrt(n_days))
-
-            ex_std = float(np.std(excess_ret, ddof=1))
             res.annual_tracking_error = float(ex_std * math.sqrt(252))
-
-            ex_std = float(np.std(excess_ret, ddof=1))
             res.information_ratio = float(np.mean(excess_ret) / ex_std * math.sqrt(252))
 
     # ── 16. 最大回撤 ──
