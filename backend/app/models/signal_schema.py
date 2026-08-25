@@ -43,6 +43,7 @@ class SignalOverview(BaseModel):
     strategy_id: StrategyId
     strategy_name: str
     signal_date: str
+    updated_at: Optional[str] = None
     holdings: list[HoldingsItem]
     signal_detail: dict
 
@@ -51,6 +52,7 @@ class SignalDetail(BaseModel):
     strategy_id: StrategyId
     strategy_name: str
     signal_date: str
+    updated_at: Optional[str] = None
     holdings: list[HoldingsItem]
     signal_detail: dict
     nav_latest: Optional[float] = None
