@@ -37,6 +37,21 @@ import {
   AssetGroup, Sensitivity
 } from "@/lib/api";
 
+async function withStartupTimeout<T>(promise: Promise<T>, timeoutMs = 60000): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error("Backend startup timeout"));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 import {
   SummaryStat, MatrixResponse, RollingResponse,
   AnomalySignal, InsightResponse, FrontierResponse
@@ -84,6 +99,8 @@ export default function Dashboard() {
   } | null>(null);
   const [computingCustom, setComputingCustom] = useState(false);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [data, setData] = useState<{
     summary: SummaryStat[];
     recentMatrix: MatrixResponse | null;
@@ -114,8 +131,9 @@ export default function Dashboard() {
     const sens = sensitivity;
     loadedRef.current = { group, sensitivity: sens };
     setLoading(true);
+    setLoadError(null);
     try {
-      const [sum, rec, lng, sRec, sAll, rCorr, rVol, anom, ins] = await Promise.all([
+      const [sum, rec, lng, sRec, sAll, rCorr, rVol, anom, ins] = await withStartupTimeout(Promise.all([
         fetchSummary(group),
         fetchRecentMatrix("fast", group),
         fetchLongTermMatrix("smooth", group),
@@ -125,7 +143,7 @@ export default function Dashboard() {
         fetchRollingVolatility(sens, group),
         fetchAnomalies(sens, group),
         fetchInsights(sens, group)
-      ]);
+      ]));
 
       // Ignore stale responses from previous group/sensitivity
       const current = loadedRef.current;
@@ -152,6 +170,7 @@ export default function Dashboard() {
       });
     } catch (error) {
       console.error("Failed to load data:", error);
+      setLoadError("后端正在启动或暂时不可用");
     } finally {
       const current = loadedRef.current;
       if (current.group === group && current.sensitivity === sens) {
@@ -399,7 +418,22 @@ export default function Dashboard() {
 
       {/* Content */}
       <div className="min-h-[500px]">
-        {loading ? (
+        {loadError ? (
+          <div className="flex flex-col items-center justify-center h-[300px] gap-4 text-center">
+            <div>
+              <h2 className="text-sm font-semibold text-white">{loadError}</h2>
+              <p className="mt-2 text-xs text-gray-500">
+                后端可能正在预热计算缓存。稍等片刻后重试。
+              </p>
+            </div>
+            <button
+              onClick={loadData}
+              className="px-3 py-1.5 text-xs font-medium rounded-md bg-white text-gray-900 hover:opacity-90 transition-opacity"
+            >
+              重试
+            </button>
+          </div>
+        ) : loading ? (
           <div className="flex justify-center items-center h-[300px]">
             <RefreshCcw className="animate-spin text-accent" size={32} />
           </div>
