@@ -27,7 +27,11 @@ def _get_pro():
         if not _TUSHARE_TOKEN:
             logger.warning("TUSHARE_TOKEN not configured")
             return None
-        import tushare as ts
+        try:
+            import tushare as ts
+        except ImportError:
+            logger.warning("tushare not installed (pip install tushare); skipping A-share refresh")
+            return None
         ts.set_token(_TUSHARE_TOKEN)
         _ts_pro = ts.pro_api()
     return _ts_pro

@@ -116,7 +116,14 @@ export async function fetchSignalOverview(strategyId: string): Promise<SignalOve
 
 export async function fetchNavCurve(strategyId: string): Promise<import("./types").NavCurve> {
   const res = await fetch(`${SIGNALS_BASE}/nav/${strategyId}`);
-  if (!res.ok) throw new Error(`Failed to fetch NAV curve for ${strategyId}`);
+  if (!res.ok) {
+    let message = `Failed to fetch NAV curve for ${strategyId}`;
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === "string" && body.detail) message = body.detail;
+    } catch { /* keep generic message */ }
+    throw new Error(message);
+  }
   return res.json();
 }
 
@@ -129,5 +136,22 @@ export async function fetchSignalMetrics(strategyId: string): Promise<import("./
 export async function fetchSignalHistory(strategyId: string, limit = 30): Promise<import("./types").SignalHistoryItem[]> {
   const res = await fetch(`${SIGNALS_BASE}/history/${strategyId}?limit=${limit}`);
   if (!res.ok) throw new Error(`Failed to fetch signal history for ${strategyId}`);
+  return res.json();
+}
+
+export async function fetchWindowBacktest(
+  strategyId: string, startDate: string, endDate?: string
+): Promise<{ metrics: import("./types").BacktestMetrics; nav: import("./types").NavCurve }> {
+  const params = new URLSearchParams({ start_date: startDate });
+  if (endDate) params.set("end_date", endDate);
+  const res = await fetch(`${SIGNALS_BASE}/backtest/${strategyId}?${params}`);
+  if (!res.ok) {
+    let message = `Failed to fetch window backtest for ${strategyId}`;
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === "string" && body.detail) message = body.detail;
+    } catch { /* keep generic message */ }
+    throw new Error(message);
+  }
   return res.json();
 }

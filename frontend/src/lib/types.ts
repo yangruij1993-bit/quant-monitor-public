@@ -95,6 +95,7 @@ export interface SignalOverview {
   signal_date: string;
   holdings: HoldingsItem[];
   signal_detail: Record<string, unknown>;
+  updated_at: string | null;
 }
 
 export interface BacktestMetrics {
@@ -106,6 +107,24 @@ export interface BacktestMetrics {
   turnover: number | null;
   period_start: string;
   period_end: string;
+  absolute_return?: number | null;
+  // ── PMS extended metrics (populated when nav/benchmark data allows) ──
+  relative_return?: number | null;
+  relative_return_geometric?: number | null;
+  weekly_return?: number | null;
+  monthly_return?: number | null;
+  quarterly_return?: number | null;
+  ytd_return?: number | null;
+  alpha?: number | null;
+  beta?: number | null;
+  tracking_error?: number | null;
+  annual_tracking_error?: number | null;
+  information_ratio?: number | null;
+  daily_win_rate?: number | null;
+  weekly_win_rate?: number | null;
+  monthly_win_rate?: number | null;
+  calmar?: number | null;
+  avg_holding_days?: number | null;
 }
 
 export interface SignalDetail {
@@ -116,6 +135,7 @@ export interface SignalDetail {
   signal_detail: Record<string, unknown>;
   nav_latest: number | null;
   metrics: BacktestMetrics | null;
+  updated_at: string | null;
 }
 
 export interface NavCurve {
@@ -124,6 +144,8 @@ export interface NavCurve {
   nav: number[];
   benchmark_nav: number[] | null;
   benchmark_name: string | null;
+  excess_nav: number[] | null;
+  excess_name: string | null;
 }
 
 export interface SignalHistoryItem {

@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { SignalOverview, NavCurve, BacktestMetrics } from "@/lib/types";
-import { fetchSignalOverviews, fetchNavCurve, fetchSignalMetrics } from "@/lib/api";
+import { fetchSignalOverviews, fetchNavCurve, fetchSignalMetrics, fetchWindowBacktest } from "@/lib/api";
 import { Activity, BarChart3, LineChart, AlertTriangle, Inbox } from "lucide-react";
 import clsx from "clsx";
 import {
@@ -151,12 +151,20 @@ function NavChartSection({ strategyId }: { strategyId: string }) {
     date: d.length > 10 ? d.slice(0, 10) : d,
     nav: navData.nav[i],
     ...(navData.benchmark_nav ? { benchmark: navData.benchmark_nav[i] } : {}),
+    ...(navData.excess_nav ? { excess: navData.excess_nav[i] } : {}),
   }));
 
-  // Calculate interval to show ~1 tick per year (assume ~252 trading days/year)
-  const tickInterval = chartData.length > 252
-    ? Math.floor(chartData.length / (Number(chartData[chartData.length - 1].date.slice(0, 4)) - Number(chartData[0].date.slice(0, 4)) + 1))
-    : 0;
+  // One tick per year, anchored at each year's first trading day in the data
+  const yearTicks: string[] = [];
+  let lastYear = "";
+  for (const point of chartData) {
+    const year = point.date.slice(0, 4);
+    if (year !== lastYear) {
+      yearTicks.push(point.date);
+      lastYear = year;
+    }
+  }
+  const backtestCutoff = navData.dates[navData.dates.length - 1]?.slice(0, 10);
 
   // Check if all nav values are the same (flat placeholder)
   const isFlat = navData.nav.every(v => v === navData.nav[0]);
@@ -171,26 +179,40 @@ function NavChartSection({ strategyId }: { strategyId: string }) {
             权重数据（需要价格数据计算实际净值）
           </span>
         )}
+        {backtestCutoff && (
+          <span className="text-xs text-gray-500 ml-auto">回测更新至 {backtestCutoff}</span>
+        )}
       </div>
       <ResponsiveContainer width="100%" height={350}>
         <RechartsLineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#333" />
           <XAxis
             dataKey="date"
-            interval={tickInterval || "preserveStartEnd"}
+            ticks={yearTicks}
             tick={{ fill: "#999", fontSize: 11 }}
             tickFormatter={(v: string) => v.slice(0, 4)}
             minTickGap={40}
           />
-          <YAxis tick={{ fill: "#999", fontSize: 11 }} domain={["auto", "auto"]} />
+          <YAxis yAxisId="left" tick={{ fill: "#999", fontSize: 11 }} domain={["auto", "auto"]} />
+          {navData.excess_nav && (
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              tick={{ fill: "#10b981", fontSize: 11 }}
+              domain={["auto", "auto"]}
+            />
+          )}
           <Tooltip
             contentStyle={{ backgroundColor: "#1a1a2e", border: "1px solid #333", borderRadius: 6 }}
             labelStyle={{ color: "#999" }}
           />
           <Legend />
-          <Line type="monotone" dataKey="nav" stroke="#6366f1" dot={false} strokeWidth={2} name="策略净值" />
+          <Line yAxisId="left" type="monotone" dataKey="nav" stroke="#6366f1" dot={false} strokeWidth={2} name="策略净值" />
           {navData.benchmark_nav && (
-            <Line type="monotone" dataKey="benchmark" stroke="#666" dot={false} strokeWidth={1} strokeDasharray="5 5" name={navData.benchmark_name || "基准"} />
+            <Line yAxisId="left" type="monotone" dataKey="benchmark" stroke="#666" dot={false} strokeWidth={1} strokeDasharray="5 5" name={navData.benchmark_name || "基准"} />
+          )}
+          {navData.excess_nav && (
+            <Line yAxisId="right" type="monotone" dataKey="excess" stroke="#10b981" dot={false} strokeWidth={1.5} name={navData.excess_name || "累计超额收益"} />
           )}
         </RechartsLineChart>
       </ResponsiveContainer>
@@ -245,11 +267,40 @@ function MetricsSection({ strategyId }: { strategyId: string }) {
     );
   }
 
+  const pct = (v: number | null | undefined, digits = 2) =>
+    v === null || v === undefined ? null : `${(v * 100).toFixed(digits)}%`;
+  const num = (v: number | null | undefined, digits = 2) =>
+    v === null || v === undefined ? null : v.toFixed(digits);
+
+  const pmsExtras: { label: string; value: string; color: string }[] = [];
+  const pushExtra = (label: string, value: string | null, color: string) => {
+    if (value !== null) pmsExtras.push({ label, value, color });
+  };
+  pushExtra("绝对收益(区间)", pct(metrics.absolute_return), (metrics.absolute_return ?? 0) >= 0 ? "text-green-400" : "text-red-400");
+  pushExtra("相对回报(算术)", pct(metrics.relative_return), (metrics.relative_return ?? 0) >= 0 ? "text-green-400" : "text-red-400");
+  pushExtra("相对回报(几何)", pct(metrics.relative_return_geometric), (metrics.relative_return_geometric ?? 0) >= 0 ? "text-green-400" : "text-red-400");
+  pushExtra("本周回报", pct(metrics.weekly_return), (metrics.weekly_return ?? 0) >= 0 ? "text-green-400" : "text-red-400");
+  pushExtra("本月回报", pct(metrics.monthly_return), (metrics.monthly_return ?? 0) >= 0 ? "text-green-400" : "text-red-400");
+  pushExtra("本季回报", pct(metrics.quarterly_return), (metrics.quarterly_return ?? 0) >= 0 ? "text-green-400" : "text-red-400");
+  pushExtra("本年回报", pct(metrics.ytd_return), (metrics.ytd_return ?? 0) >= 0 ? "text-green-400" : "text-red-400");
+  pushExtra("Alpha(年化)", pct(metrics.alpha), (metrics.alpha ?? 0) >= 0 ? "text-green-400" : "text-red-400");
+  pushExtra("Beta", num(metrics.beta), "text-gray-300");
+  pushExtra("跟踪误差(区间)", pct(metrics.tracking_error), "text-gray-300");
+  pushExtra("跟踪误差(年化)", pct(metrics.annual_tracking_error), "text-gray-300");
+  pushExtra("信息比率", num(metrics.information_ratio), (metrics.information_ratio ?? 0) >= 0.5 ? "text-green-400" : "text-yellow-400");
+  if (metrics.daily_win_rate != null) {
+    pushExtra("日胜率", pct(metrics.daily_win_rate, 1), metrics.daily_win_rate >= 0.5 ? "text-green-400" : "text-yellow-400");
+    pushExtra("周胜率", pct(metrics.weekly_win_rate, 1), (metrics.weekly_win_rate ?? 0) >= 0.5 ? "text-green-400" : "text-yellow-400");
+    pushExtra("月胜率", pct(metrics.monthly_win_rate, 1), (metrics.monthly_win_rate ?? 0) >= 0.5 ? "text-green-400" : "text-yellow-400");
+  }
+  pushExtra("Calmar", num(metrics.calmar), (metrics.calmar ?? 0) >= 1 ? "text-green-400" : "text-yellow-400");
+  pushExtra("平均持仓天数", metrics.avg_holding_days != null ? `${metrics.avg_holding_days.toFixed(0)} 天` : null, "text-gray-300");
+
   const rows = [
     { label: "年化收益率", value: `${(metrics.annual_return * 100).toFixed(2)}%`, color: metrics.annual_return >= 0 ? "text-green-400" : "text-red-400" },
     { label: "最大回撤", value: `${(metrics.max_drawdown * 100).toFixed(2)}%`, color: "text-red-400" },
     { label: "夏普比率", value: metrics.sharpe_ratio.toFixed(2), color: metrics.sharpe_ratio >= 1 ? "text-green-400" : "text-yellow-400" },
-    { label: "胜率", value: `${(metrics.win_rate * 100).toFixed(1)}%`, color: metrics.win_rate >= 0.5 ? "text-green-400" : "text-yellow-400" },
+    ...(metrics.daily_win_rate == null ? [{ label: "胜率", value: `${(metrics.win_rate * 100).toFixed(1)}%`, color: metrics.win_rate >= 0.5 ? "text-green-400" : "text-yellow-400" }] : []),
     ...(metrics.annual_volatility !== null ? [{ label: "年化波动率", value: `${(metrics.annual_volatility * 100).toFixed(2)}%`, color: "text-gray-300" }] : []),
     ...(metrics.turnover !== null ? [{ label: "换手率", value: `${(metrics.turnover * 100).toFixed(2)}%`, color: "text-gray-300" }] : []),
   ];
@@ -271,176 +322,198 @@ function MetricsSection({ strategyId }: { strategyId: string }) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-// ── Momentum Timing Detail (for spmo-usmv-64) ────────────────
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function MomentumTimingDetail({ detail }: { detail: Record<string, unknown> }) {
-  const regime = detail.vol_regime as string;
-  const isLowVol = regime === "long";
-  const weight = detail.timing_weight as number;
-  const mmtLong = detail.momentum_long as Record<string, number> || {};
-  const mmtShort = detail.momentum_short as Record<string, number> || {};
-
-  return (
-    <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <AlertTriangle size={14} className="text-yellow-400" />
-        <h4 className="font-semibold text-white">择时信号详情</h4>
-        <span className="text-xs text-gray-500 ml-auto font-mono">
-          标的: {String(detail.bench ?? "")} | 收盘: {typeof detail.close === "number" ? detail.close.toFixed(2) : String(detail.close ?? "")}
-        </span>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-background rounded-lg p-3">
-          <div className="text-xs text-gray-500 mb-1">仓位权重</div>
-          <div className={clsx("text-lg font-semibold font-mono", weight > 0.5 ? "text-green-400" : weight > 0 ? "text-yellow-400" : "text-red-400")}>
-            {(weight * 100).toFixed(0)}%
-          </div>
-        </div>
-        <div className="bg-background rounded-lg p-3">
-          <div className="text-xs text-gray-500 mb-1">波动率</div>
-          <div className="text-lg font-semibold font-mono text-gray-300">
-            {typeof detail.volatility === "number" ? (detail.volatility * 100).toFixed(1) + "%" : "-"}
-          </div>
-        </div>
-        <div className="bg-background rounded-lg p-3">
-          <div className="text-xs text-gray-500 mb-1">波动率状态</div>
-          <div className={clsx("text-sm font-semibold", isLowVol ? "text-green-400" : "text-orange-400")}>
-            {isLowVol ? "低波（长周期）" : "高波（短周期）"}
-          </div>
-        </div>
-        <div className="bg-background rounded-lg p-3">
-          <div className="text-xs text-gray-500 mb-1">日涨跌幅</div>
-          <div className={clsx("text-lg font-semibold font-mono", typeof detail.daily_chg === "number" && detail.daily_chg >= 0 ? "text-green-400" : "text-red-400")}>
-            {typeof detail.daily_chg === "number" ? (detail.daily_chg * 100).toFixed(2) + "%" : "-"}
-          </div>
-        </div>
-      </div>
-
-      {/* Momentum table */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <div className="text-xs text-gray-500 mb-2">{isLowVol ? "► 长周期动量（当前使用）" : "长周期动量"}</div>
-          <div className="space-y-1">
-            {Object.entries(mmtLong).sort(([a], [b]) => Number(a) - Number(b)).map(([period, val]) => (
-              <div key={period} className="flex items-center justify-between text-sm">
-                <span className="text-gray-400">{period}日动量</span>
-                <span className={clsx("font-mono", val >= 0 ? "text-green-400" : "text-red-400")}>
-                  {(val * 100).toFixed(2)}%
-                </span>
+      {pmsExtras.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-white/10">
+          <div className="text-xs text-gray-500 mb-2">扩展指标（PMS）</div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1.5 text-xs">
+            {pmsExtras.map((r, i) => (
+              <div key={i} className="flex items-baseline justify-between gap-2 border-b border-white/10 pb-1">
+                <span className="text-gray-500">{r.label}</span>
+                <span className={clsx("font-mono font-medium tabular-nums", r.color)}>{r.value}</span>
               </div>
             ))}
           </div>
         </div>
-        <div>
-          <div className="text-xs text-gray-500 mb-2">{!isLowVol ? "► 短周期动量（当前使用）" : "短周期动量"}</div>
-          <div className="space-y-1">
-            {Object.entries(mmtShort).sort(([a], [b]) => Number(a) - Number(b)).map(([period, val]) => (
-              <div key={period} className="flex items-center justify-between text-sm">
-                <span className="text-gray-400">{period}日动量</span>
-                <span className={clsx("font-mono", val >= 0 ? "text-green-400" : "text-red-400")}>
-                  {(val * 100).toFixed(2)}%
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
 
-// ── CN/US/HK Multi-Region Timing Detail ──────────────────────
+// ── Window Backtest: recompute metrics for an arbitrary date window ──
 
-const REGION_LABELS: Record<string, string> = {
-  us: "美股 (SPX)",
-  hk: "恒生科技",
-  cn300: "沪深300",
-  cn1000: "中证1000",
-};
+function useWindowPresets(dates: string[]): { label: string; value: string }[] {
+  return useMemo(() => {
+    if (dates.length === 0) return [];
+    const last = dates[dates.length - 1];
+    const presets: { label: string; value: string }[] = [{ label: "全部", value: dates[0] }];
+    const lastMs = new Date(last).getTime();
+    for (const [label, days] of [["近3月", 91], ["近1年", 365]] as const) {
+      const cutoff = lastMs - days * 86400000;
+      const hit = dates.find(d => new Date(d).getTime() >= cutoff);
+      if (hit && hit !== dates[0]) presets.push({ label, value: hit });
+    }
+    const yearStart = `${last.slice(0, 4)}-01-01`;
+    const yHit = dates.find(d => d >= yearStart);
+    if (yHit && yHit !== dates[0] && !presets.some(p => p.value === yHit)) {
+      presets.push({ label: "年初", value: yHit });
+    }
+    return presets;
+  }, [dates]);
+}
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function CnUsHkTimingDetail({ detail }: { detail: Record<string, unknown> }) {
-  const situation = detail.current_situation as Record<string, Record<string, unknown>> || {};
-  const allocs = [
-    { key: "us", label: "美股", alloc: detail.us_alloc as number },
-    { key: "hk", label: "港股", alloc: detail.hk_alloc as number },
-    { key: "cn300", label: "沪深300", alloc: detail.cn300_alloc as number },
-    { key: "cn1000", label: "中证1000", alloc: detail.cn1000_alloc as number },
-  ].filter(a => a.alloc > 0);
+function WindowBacktestSection({ strategyId }: { strategyId: string }) {
+  const [navDates, setNavDates] = useState<string[]>([]);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ metrics: BacktestMetrics; nav: NavCurve } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchNavCurve(strategyId)
+      .then(data => { if (!cancelled) setNavDates(data.dates); })
+      .catch(() => { /* nav chart already reports errors */ });
+    return () => { cancelled = true; };
+  }, [strategyId]);
+
+  useEffect(() => {
+    if (navDates.length > 0 && !startDate) setStartDate(navDates[0]);
+  }, [navDates, startDate]);
+
+  useEffect(() => {
+    if (!startDate) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetchWindowBacktest(strategyId, startDate, endDate || undefined)
+      .then(data => { if (!cancelled) setResult(data); })
+      .catch(e => { if (!cancelled) setError(e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [strategyId, startDate, endDate]);
+
+  const presets = useWindowPresets(navDates);
+  const m = result?.metrics;
+  const nav = result?.nav;
+  const chartData = nav && nav.dates.length > 0
+    ? nav.dates.map((d, i) => ({
+        date: d.length > 10 ? d.slice(0, 10) : d,
+        nav: nav.nav[i],
+        ...(nav.benchmark_nav ? { benchmark: nav.benchmark_nav[i] } : {}),
+      }))
+    : [];
+
+  if (navDates.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <Activity size={14} className="text-cyan-400" />
-        <h4 className="font-semibold text-white">各区域择时详情</h4>
-        <span className="text-xs text-gray-500 ml-auto">
-          配比: {allocs.map(a => `${a.label} ${((a.alloc as number) * 100).toFixed(0)}%`).join(" / ")}
-        </span>
+    <div className="rounded-lg border border-border bg-surface p-4 space-y-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">窗口回测 · 起始日期</label>
+          <div className="flex flex-wrap gap-1.5">
+            {presets.map(p => (
+              <button
+                key={p.value}
+                onClick={() => setStartDate(p.value)}
+                className={clsx(
+                  "px-2.5 py-1 rounded text-xs font-mono border transition-colors",
+                  startDate === p.value
+                    ? "bg-accent/20 text-accent border-accent/40"
+                    : "bg-background text-gray-400 border-border hover:text-gray-200"
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={startDate}
+            min={navDates[0]}
+            max={navDates[navDates.length - 1]}
+            onChange={e => setStartDate(e.target.value)}
+            className="bg-background border border-border rounded px-2 py-1 text-xs font-mono text-gray-300 w-36"
+          />
+          <span className="text-gray-500 text-xs">→</span>
+          <input
+            type="date"
+            value={endDate}
+            min={navDates[0]}
+            max={navDates[navDates.length - 1]}
+            onChange={e => setEndDate(e.target.value)}
+            placeholder="今天"
+            className="bg-background border border-border rounded px-2 py-1 text-xs font-mono text-gray-300 w-36"
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {Object.entries(situation).map(([region, data]) => {
-          if (data.error) {
-            return (
-              <div key={region} className="bg-background rounded-lg p-3">
-                <div className="text-xs text-gray-500 mb-1">{REGION_LABELS[region] || region}</div>
-                <div className="text-sm text-red-400">{String(data.error)}</div>
-              </div>
-            );
-          }
-          const w = data.timing_weight as number;
-          const regime = data.vol_regime as string;
-          const mmtLong = data.momentum_long as Record<string, number> || {};
-          const mmtShort = data.momentum_short as Record<string, number> || {};
-          const activeMmt = regime === "long" ? mmtLong : mmtShort;
-
-          return (
-            <div key={region} className="bg-background rounded-lg p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-white">{REGION_LABELS[region] || region}</span>
-                <span className={clsx("text-xs font-mono px-2 py-0.5 rounded border",
-                  w > 0.5 ? "bg-green-500/20 text-green-400 border-green-500/30" :
-                  w > 0 ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" :
-                  "bg-red-500/20 text-red-400 border-red-500/30"
-                )}>
-                  仓位 {(w * 100).toFixed(0)}%
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div>
-                  <span className="text-gray-500">收盘</span>
-                  <div className="font-mono text-gray-300">{typeof data.close === "number" ? data.close.toFixed(2) : "-"}</div>
-                </div>
-                <div>
-                  <span className="text-gray-500">波动率</span>
-                  <div className="font-mono text-gray-300">{typeof data.volatility === "number" ? (data.volatility * 100).toFixed(1) + "%" : "-"}</div>
-                </div>
-                <div>
-                  <span className="text-gray-500">状态</span>
-                  <div className={clsx("font-mono", regime === "long" ? "text-green-400" : "text-orange-400")}>
-                    {regime === "long" ? "低波" : "高波"}
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {Object.entries(activeMmt).map(([period, val]) => (
-                  <span key={period} className={clsx(
-                    "text-[10px] font-mono px-1.5 py-0.5 rounded",
-                    val >= 0 ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
-                  )}>
-                    {period}d {(val as number * 100).toFixed(1)}%
-                  </span>
-                ))}
-              </div>
+      {loading && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-background rounded-lg p-3 animate-pulse">
+              <div className="h-3 bg-gray-700/50 rounded w-16 mb-2" />
+              <div className="h-5 bg-gray-700/50 rounded w-12" />
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && m && (
+        <>
+          <div className="flex items-center gap-2">
+            <BarChart3 size={16} className="text-accent" />
+            <h4 className="font-semibold text-white">窗口回测指标</h4>
+            <span className="text-xs text-gray-500 ml-auto font-mono">
+              {m.period_start} ~ {m.period_end}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: "年化收益率", value: `${(m.annual_return * 100).toFixed(2)}%`, color: m.annual_return >= 0 ? "text-green-400" : "text-red-400" },
+              { label: "最大回撤", value: `${(m.max_drawdown * 100).toFixed(2)}%`, color: "text-red-400" },
+              { label: "Sharpe", value: m.sharpe_ratio.toFixed(2), color: m.sharpe_ratio >= 1 ? "text-green-400" : m.sharpe_ratio >= 0 ? "text-yellow-400" : "text-red-400" },
+              { label: "年化波动率", value: m.annual_volatility != null ? `${(m.annual_volatility * 100).toFixed(2)}%` : "-", color: "text-gray-300" },
+              { label: "Calmar", value: m.calmar != null ? m.calmar.toFixed(2) : "-", color: "text-gray-300" },
+              { label: "Alpha (年化)", value: m.alpha != null ? `${(m.alpha * 100).toFixed(2)}%` : "-", color: (m.alpha ?? 0) >= 0 ? "text-green-400" : "text-red-400" },
+              { label: "Beta", value: m.beta != null ? m.beta.toFixed(2) : "-", color: "text-gray-300" },
+              { label: "信息比率", value: m.information_ratio != null ? m.information_ratio.toFixed(2) : "-", color: "text-gray-300" },
+              { label: "日胜率", value: m.daily_win_rate != null ? `${(m.daily_win_rate * 100).toFixed(1)}%` : "-", color: "text-gray-300" },
+              { label: "几何超额", value: m.relative_return_geometric != null ? `${(m.relative_return_geometric * 100).toFixed(2)}%` : "-", color: (m.relative_return_geometric ?? 0) >= 0 ? "text-green-400" : "text-red-400" },
+              { label: "换手率", value: m.turnover != null ? `${(m.turnover * 100).toFixed(2)}%` : "-", color: "text-gray-300" },
+              { label: "平均持仓天数", value: m.avg_holding_days != null ? `${m.avg_holding_days.toFixed(0)} 天` : "-", color: "text-gray-300" },
+            ].map((r, i) => (
+              <div key={i} className="bg-background rounded-lg p-3">
+                <div className="text-xs text-gray-500 mb-1">{r.label}</div>
+                <div className={clsx("text-lg font-semibold font-mono", r.color)}>{r.value}</div>
+              </div>
+            ))}
+          </div>
+          {chartData.length > 0 && (
+            <ResponsiveContainer width="100%" height={240}>
+              <RechartsLineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                <XAxis dataKey="date" tick={{ fill: "#999", fontSize: 11 }} tickFormatter={(v: string) => v.slice(5)} minTickGap={30} />
+                <YAxis yAxisId="left" tick={{ fill: "#999", fontSize: 11 }} domain={["auto", "auto"]} />
+                <Tooltip contentStyle={{ backgroundColor: "#1a1a2e", border: "1px solid #333", borderRadius: 6 }} labelStyle={{ color: "#999" }} />
+                <Legend />
+                <Line yAxisId="left" type="monotone" dataKey="nav" stroke="#6366f1" dot={false} strokeWidth={2} name="窗口净值" />
+                {nav?.benchmark_nav && (
+                  <Line yAxisId="left" type="monotone" dataKey="benchmark" stroke="#666" dot={false} strokeWidth={1} strokeDasharray="5 5" name="基准" />
+                )}
+              </RechartsLineChart>
+            </ResponsiveContainer>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -520,6 +593,7 @@ function StrategyDetailView({ strategyId, overview }: { strategyId: string; over
       </div>
 
       {/* NAV Chart */}
+      <WindowBacktestSection strategyId={strategyId} />
       <NavChartSection strategyId={strategyId} />
 
       {/* Metrics */}
