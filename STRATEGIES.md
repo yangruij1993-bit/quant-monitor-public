@@ -46,22 +46,45 @@ strategies/
   ```json
   "nav": {
     "dates": ["2026-01-02", "2026-01-03", "2026-01-06"],
-    "values": [1.0, 1.005, 0.998]
+    "values": [1.0, 1.005, 0.998],
+    "benchmark_nav": [1.0, 1.002, 0.997],
+    "benchmark_name": "沪深300"
   }
   ```
-- `metrics` — 回测指标：
-  ```json
-  "metrics": {
-    "annual_return": 0.12,
-    "max_drawdown": -0.08,
-    "sharpe_ratio": 1.5,
-    "win_rate": 0.55,
-    "annual_volatility": 0.15,
-    "turnover": 3.2,
-    "period_start": "2024-01-02",
-    "period_end": "2026-06-12"
-  }
-  ```
+  `benchmark_nav`/`benchmark_name` 可选；提供后前端自动叠加基准曲线与累计超额曲线。
+- `metrics` — 回测指标（**可选**）。若缺省且 `nav` 存在，后端自动计算 22 项 PMS 风格指标；若提供则优先后端透传。完整字段见下表（除前 5 项必填外均可选）。
+
+  | 字段名 | 含义 |
+  | --- | --- |
+  | **必填字段** | |
+  | period_start | 回测区间起始日期 |
+  | period_end | 回测区间结束日期 |
+  | annual_return | 年化收益率 |
+  | max_drawdown | 最大回撤 |
+  | sharpe_ratio | 夏普比率 |
+  | **收益类** | |
+  | absolute_return | 绝对收益 |
+  | relative_return | 相对回报（算术） |
+  | relative_return_geometric | 相对回报（几何） |
+  | weekly_return | 周回报 |
+  | monthly_return | 月回报 |
+  | quarterly_return | 季回报 |
+  | ytd_return | 年初至今回报 |
+  | **风险类** | |
+  | annual_volatility | 年化波动率 |
+  | calmar | Calmar 比率 |
+  | **相对基准类** | |
+  | alpha | Alpha |
+  | beta | Beta |
+  | tracking_error | 跟踪误差（区间） |
+  | annual_tracking_error | 跟踪误差（年化） |
+  | information_ratio | 信息比率 |
+  | daily_win_rate | 日胜率 |
+  | weekly_win_rate | 周胜率 |
+  | monthly_win_rate | 月胜率 |
+  | **交易类** | |
+  | turnover | 换手率（需 history 提供 holdings 快照） |
+  | avg_holding_days | 平均持仓天数（需 history 提供 holdings 快照） |
 
 ### 3. 可选：历史记录
 
@@ -71,6 +94,12 @@ strategies/
 {"date": "2026-06-10", "action": "买入", "detail": {"reason": "突破均线"}}
 {"date": "2026-06-11", "action": "持有", "detail": {"reason": "趋势延续"}}
 {"date": "2026-06-12", "action": "卖出", "detail": {"reason": "跌破均线"}}
+```
+
+每行可带 `holdings` 快照（可选）。≥2 个快照时后端自动计算换手率与平均持仓天数：
+
+```
+{"date": "2026-06-12", "action": "调仓", "detail": {...}, "holdings": [{"ticker": "510300.SH", "name": "沪深300", "weight": 0.6}]}
 ```
 
 ### 4. 配置目录路径
@@ -130,6 +159,8 @@ if __name__ == "__main__":
     generate_signal()
 ```
 
+`strategies/_demo/generate_demo.py` 是生成完整 nav/history 契约数据的可运行参考。
+
 ## 目录结构总览
 
 ```
@@ -145,3 +176,7 @@ asset-monitor/
 ```
 
 系统启动后自动扫描所有子目录，前端"策略信号"tab 动态显示所有已接入的策略。
+
+## 窗口回测
+
+策略详情页可选任意起止窗口重算指标（`GET /api/v1/signals/backtest/{id}?start_date=&end_date=`，end_date 可选默认到最后）。前端提供 全部/近3月/近1年/年初 预设与自定义日期。
